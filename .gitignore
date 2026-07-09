@@ -16,3 +16,26 @@ postman/
 
 # Environment variables
 .env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model Files
+*.pkl
+
+# Generated Images
+*.png
+
+# Temporary Files
+*.log
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Results
+results/
+
+# Models
+models/
+Mini_Project/models/

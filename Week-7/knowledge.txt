@@ -1,0 +1,19 @@
+Artificial Intelligence (AI) is the simulation of human intelligence by machines.
+
+Machine Learning is a subset of AI that enables computers to learn from data.
+
+Deep Learning is a subset of Machine Learning that uses neural networks.
+
+Python is one of the most popular programming languages for AI development.
+
+Generative AI creates new content such as text, images, music, and code.
+
+Large Language Models (LLMs) understand and generate human language.
+
+Transformers are deep learning architectures used in modern LLMs.
+
+Embeddings convert text into numerical vectors.
+
+FAISS is a library used for similarity search over vector embeddings.
+
+RAG stands for Retrieval-Augmented Generation.

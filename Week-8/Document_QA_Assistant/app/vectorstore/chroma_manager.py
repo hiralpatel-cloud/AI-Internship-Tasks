@@ -1,8 +1,8 @@
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-from Document_QA_Assistant.app.core.config import settings
-from Document_QA_Assistant.app.core.logger import logger
+from app.core.config import settings
+from app.core.logger import logger
 
 
 class ChromaManager:

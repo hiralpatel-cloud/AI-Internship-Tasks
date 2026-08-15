@@ -1,6 +1,6 @@
 from sentence_transformers import SentenceTransformer
 
-from Document_QA_Assistant.app.core.logger import logger
+from app.core.logger import logger
 
 
 class EmbeddingService:

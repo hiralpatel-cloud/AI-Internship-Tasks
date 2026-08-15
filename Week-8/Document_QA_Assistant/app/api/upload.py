@@ -3,11 +3,11 @@ import shutil
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from Document_QA_Assistant.app.core.config import settings
-from Document_QA_Assistant.app.core.logger import logger
-from Document_QA_Assistant.app.services.chunk_service import ChunkService
-from Document_QA_Assistant.app.services.pdf_service import PDFService
-from Document_QA_Assistant.app.vectorstore.chroma_manager import ChromaManager
+from app.core.config import settings
+from app.core.logger import logger
+from app.services.chunk_service import ChunkService
+from app.services.pdf_service import PDFService
+from app.vectorstore.chroma_manager import ChromaManager
 
 
 router = APIRouter(prefix="/upload", tags=["Upload"])

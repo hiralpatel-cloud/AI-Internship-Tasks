@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from Document_QA_Assistant.app.core.config import settings
+from app.core.config import settings
 
 
 log_file = Path(settings.LOG_FOLDER) / "app.log"

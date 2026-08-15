@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from Document_QA_Assistant.app.core.config import settings
-from Document_QA_Assistant.app.vectorstore.chroma_manager import ChromaManager
+from app.core.config import settings
+from app.vectorstore.chroma_manager import ChromaManager
 
 
 router = APIRouter(tags=["Health"])

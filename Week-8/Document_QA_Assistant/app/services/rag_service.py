@@ -1,9 +1,9 @@
 from google import genai
 
-from Document_QA_Assistant.app.core.config import settings
-from Document_QA_Assistant.app.core.logger import logger
-from Document_QA_Assistant.app.prompts.prompt import RAG_PROMPT
-from Document_QA_Assistant.app.vectorstore.chroma_manager import ChromaManager
+from app.core.config import settings
+from app.core.logger import logger
+from app.prompts.prompt import RAG_PROMPT
+from app.vectorstore.chroma_manager import ChromaManager
 
 
 class RAGService:

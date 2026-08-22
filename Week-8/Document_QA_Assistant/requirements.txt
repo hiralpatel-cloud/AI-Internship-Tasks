@@ -11,4 +11,4 @@ sentence-transformers
 google-genai
 streamlit
 requests
-gTTS
+gTTSdeep-translator

@@ -1,36 +1,75 @@
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException
 
-from app.core.config import settings
 from app.core.logger import logger
 from app.vectorstore.chroma_manager import ChromaManager
 
 
-router = APIRouter(prefix="/documents", tags=["Documents"])
-UPLOAD_DIR = Path(settings.UPLOAD_FOLDER)
+router = APIRouter(
+    prefix="/documents",
+    tags=["Documents"]
+)
+
 chroma = ChromaManager()
 
 
 @router.get("/")
 def get_documents():
-    documents = chroma.get_documents()
-    return {"count": len(documents), "documents": documents}
+
+    try:
+
+        documents = chroma.get_documents()
+
+        return {
+            "documents": documents
+        }
+
+    except Exception as exc:
+
+        logger.exception(
+            "Failed to retrieve documents."
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to retrieve documents: {exc}"
+        )
 
 
 @router.delete("/{filename}")
 def delete_document(filename: str):
-    safe_name = Path(filename).name
-    pdf_path = UPLOAD_DIR / safe_name
 
-    db_deleted = chroma.delete_document(safe_name)
-    file_deleted = pdf_path.exists()
+    try:
 
-    if file_deleted:
-        pdf_path.unlink()
-        logger.info("Deleted file: %s", safe_name)
+        filename = filename.strip()
 
-    if db_deleted or file_deleted:
-        return {"message": f"{safe_name} deleted successfully."}
+        if not filename:
 
-    raise HTTPException(status_code=404, detail="Document not found.")
+            raise HTTPException(
+                status_code=400,
+                detail="Filename cannot be empty."
+            )
+
+        deleted_chunks = chroma.delete_document(
+            filename
+        )
+
+        return {
+            "success": True,
+            "message": "Document deleted successfully.",
+            "filename": filename,
+            "deleted_chunks": deleted_chunks
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+
+        logger.exception(
+            "Failed to delete document."
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Document deletion failed: {exc}"
+        )

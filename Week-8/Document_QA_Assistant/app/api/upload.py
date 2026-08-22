@@ -9,7 +9,6 @@ from app.services.chunk_service import ChunkService
 from app.services.pdf_service import PDFService
 from app.vectorstore.chroma_manager import ChromaManager
 
-
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
 UPLOAD_DIR = Path(settings.UPLOAD_FOLDER)

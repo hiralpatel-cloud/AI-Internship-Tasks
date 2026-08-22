@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import requests
 import streamlit as st
 
@@ -8,78 +11,147 @@ import streamlit as st
 
 API_URL = "http://127.0.0.1:8000"
 
+HISTORY_FILE = Path(__file__).parent / "chat_history.json"
+
 
 st.set_page_config(
     page_title="Intelligent Document Q&A Assistant",
     page_icon="📄",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
 
 # ============================================================
-# CUSTOM CSS
+# CHAT HISTORY FUNCTIONS
 # ============================================================
 
-st.markdown(
+def load_chat_history():
     """
-    <style>
-    .title {
-        font-size: 2.3rem;
-        font-weight: 750;
-        margin-bottom: 0.1rem;
-    }
+    Load chat history from chat_history.json.
+    """
 
-    .subtitle {
-        color: #777;
-        margin-bottom: 1.5rem;
-    }
+    if not HISTORY_FILE.exists():
+        return []
 
-    .source-card {
-        padding: 10px 14px;
-        border: 1px solid #ddd;
-        border-radius: 10px;
-        margin-bottom: 7px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+    try:
+
+        with open(
+            HISTORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            data = json.load(file)
+
+            if isinstance(data, list):
+                return data
+
+    except Exception:
+        pass
+
+    return []
 
 
-# ============================================================
-# SESSION STATE
-# ============================================================
+def save_chat_history(messages):
+    """
+    Save chat history to chat_history.json.
+    """
 
-if "messages" not in st.session_state:
+    try:
+
+        clean_messages = []
+
+        for message in messages:
+
+            clean_message = {
+                "role": message.get("role", ""),
+                "content": message.get("content", ""),
+                "sources": message.get("sources", []),
+            }
+
+            # Do NOT store audio bytes in JSON
+            clean_messages.append(clean_message)
+
+        with open(
+            HISTORY_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                clean_messages,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+    except Exception as exc:
+
+        st.warning(
+            f"Could not save chat history: {exc}"
+        )
+
+
+def clear_chat_history():
+
+    try:
+
+        if HISTORY_FILE.exists():
+            HISTORY_FILE.unlink()
+
+    except Exception:
+        pass
+
     st.session_state.messages = []
 
 
 # ============================================================
-# BACKEND FUNCTIONS
+# INITIALIZE SESSION
+# ============================================================
+
+if "messages" not in st.session_state:
+
+    st.session_state.messages = load_chat_history()
+
+
+# ============================================================
+# BACKEND CONNECTION
 # ============================================================
 
 def backend_online():
+
     try:
+
         response = requests.get(
-            f"{API_URL}/health",
+            f"{API_URL}/health/",
             timeout=5
         )
+
         return response.ok
 
     except requests.RequestException:
+
         return False
 
 
+# ============================================================
+# GET DOCUMENTS
+# ============================================================
+
 def get_documents():
+
     try:
+
         response = requests.get(
             f"{API_URL}/documents/",
             timeout=10
         )
 
         if response.ok:
-            return response.json().get(
+
+            data = response.json()
+
+            return data.get(
                 "documents",
                 []
             )
@@ -90,83 +162,147 @@ def get_documents():
     return []
 
 
-def upload_pdf(uploaded_file):
+# ============================================================
+# UPLOAD PDFs
+# ============================================================
+
+def upload_pdfs(uploaded_files):
+
     try:
-        return requests.post(
-            f"{API_URL}/upload/",
-            files={
-                "file": (
-                    uploaded_file.name,
-                    uploaded_file.getvalue(),
+
+        files = [
+            (
+                "files",
+                (
+                    file.name,
+                    file.getvalue(),
                     "application/pdf"
                 )
-            },
-            timeout=180,
+            )
+
+            for file in uploaded_files
+        ]
+
+        return requests.post(
+            f"{API_URL}/upload/",
+            files=files,
+            timeout=300
         )
 
     except requests.RequestException as exc:
+
         st.error(
             f"Backend connection failed: {exc}"
         )
+
         return None
 
 
+# ============================================================
+# DELETE PDF
+# ============================================================
+
 def delete_pdf(filename):
+
     try:
+
         return requests.delete(
             f"{API_URL}/documents/{filename}",
             timeout=20
         )
 
     except requests.RequestException as exc:
+
         st.error(
             f"Backend connection failed: {exc}"
         )
+
         return None
 
 
-def ask_question(question, history):
+# ============================================================
+# ASK QUESTION
+# ============================================================
+
+def ask_question(
+    question,
+    document
+):
+
+    # Send previous conversation
+    # to the backend for context.
+
+    history = []
+
+    for message in st.session_state.messages:
+
+        history.append(
+            {
+                "role": message["role"],
+                "content": message["content"]
+            }
+        )
+
     try:
+
         return requests.post(
+
             f"{API_URL}/chat/",
+
             json={
                 "question": question,
-                "history": history
+
+                "history": history,
+
+                "document": document,
             },
+
             timeout=180,
         )
 
     except requests.RequestException as exc:
+
         st.error(
             f"Backend connection failed: {exc}"
         )
+
         return None
 
 
 # ============================================================
-# TEXT TO SPEECH FUNCTION
+# GENERATE AUDIO
 # ============================================================
 
-def generate_audio(text, language):
+def generate_audio(
+    text,
+    language
+):
+
     try:
+
         return requests.post(
+
             f"{API_URL}/tts/generate",
+
             json={
                 "text": text,
-                "language": language,
+                "language": language
             },
+
             timeout=180,
         )
 
     except requests.RequestException as exc:
-        st.error(
+
+        st.warning(
             f"Audio generation failed: {exc}"
         )
+
         return None
 
 
 # ============================================================
-# SOURCE DISPLAY
+# SHOW SOURCES
 # ============================================================
 
 def show_sources(sources):
@@ -174,41 +310,36 @@ def show_sources(sources):
     if not sources:
         return
 
-    st.markdown("**📚 Sources**")
+    with st.expander("📚 Sources"):
 
-    seen = set()
+        seen = set()
 
-    for source in sources:
+        for source in sources:
 
-        document = source.get(
-            "document",
-            "Unknown"
-        )
+            document = source.get(
+                "document",
+                "Unknown"
+            )
 
-        page = source.get(
-            "page",
-            "Unknown"
-        )
+            page = source.get(
+                "page",
+                "Unknown"
+            )
 
-        key = (
-            document,
-            page
-        )
+            key = (
+                document,
+                page
+            )
 
-        if key in seen:
-            continue
+            if key in seen:
+                continue
 
-        seen.add(key)
+            seen.add(key)
 
-        st.markdown(
-            f"""
-            <div class="source-card">
-                📄 <b>{document}</b><br>
-                📖 Page: {page}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            st.markdown(
+                f"📄 **{document}** — "
+                f"Page **{page}**"
+            )
 
 
 # ============================================================
@@ -242,82 +373,112 @@ with st.sidebar:
     st.divider()
 
     # --------------------------------------------------------
-    # PDF UPLOAD
+    # UPLOAD
     # --------------------------------------------------------
 
-    st.subheader("📤 Upload PDF")
-
-    uploaded = st.file_uploader(
-        "Choose a PDF",
-        type=["pdf"]
+    st.subheader(
+        "📤 Upload PDFs"
     )
 
-    if uploaded and st.button(
-        "🚀 Upload & Index",
-        use_container_width=True
-    ):
+    uploaded_files = st.file_uploader(
 
-        if not backend_online():
+        "Choose one or more PDF files",
 
-            st.error(
-                "Start the FastAPI backend first."
-            )
+        type=["pdf"],
 
-        else:
+        accept_multiple_files=True
+    )
 
-            with st.spinner(
-                "Extracting, chunking and indexing..."
-            ):
+    if uploaded_files:
 
-                response = upload_pdf(uploaded)
+        if st.button(
+            "🚀 Upload & Index",
+            use_container_width=True
+        ):
 
-            if response is not None:
+            if not backend_online():
 
-                if response.ok:
+                st.error(
+                    "Start the FastAPI backend first."
+                )
 
-                    data = response.json()
+            else:
 
-                    st.success(
-                        data["message"]
+                with st.spinner(
+                    "Extracting, chunking and indexing..."
+                ):
+
+                    response = upload_pdfs(
+                        uploaded_files
                     )
 
-                    st.caption(
-                        f"Pages: {data['pages']} | "
-                        f"Chunks: {data['chunks']}"
-                    )
-
-                    st.rerun()
-
-                else:
+                if response is not None:
 
                     try:
 
-                        detail = response.json().get(
-                            "detail",
-                            response.text
-                        )
+                        data = response.json()
 
                     except Exception:
 
-                        detail = response.text
+                        data = {
+                            "detail": response.text
+                        }
 
-                    st.error(detail)
+                    if response.ok:
+
+                        st.success(
+                            data.get(
+                                "message",
+                                "Upload complete."
+                            )
+                        )
+
+                        for item in data.get(
+                            "results",
+                            []
+                        ):
+
+                            if item.get(
+                                "status"
+                            ) == "indexed":
+
+                                st.caption(
+                                    f"📄 {item.get('filename')} | "
+                                    f"{item.get('pages')} pages | "
+                                    f"{item.get('chunks')} chunks"
+                                )
+
+                            else:
+
+                                st.warning(
+                                    f"{item.get('filename')}: "
+                                    f"{item.get('error')}"
+                                )
+
+                        st.rerun()
+
+                    else:
+
+                        st.error(
+                            data.get(
+                                "detail",
+                                response.text
+                            )
+                        )
+
+    # --------------------------------------------------------
+    # DOCUMENTS
+    # --------------------------------------------------------
 
     st.divider()
 
-    # --------------------------------------------------------
-    # DOCUMENT LIST
-    # --------------------------------------------------------
-
-    st.subheader("📚 Documents")
-
     documents = get_documents()
 
-    if documents:
+    st.subheader(
+        f"📚 Documents ({len(documents)})"
+    )
 
-        st.caption(
-            f"{len(documents)} document(s)"
-        )
+    if documents:
 
         for document in documents:
 
@@ -331,107 +492,156 @@ with st.sidebar:
                 use_container_width=True
             ):
 
-                with st.spinner(
-                    "Deleting..."
+                response = delete_pdf(
+                    document
+                )
+
+                if (
+                    response is not None
+                    and response.ok
                 ):
 
-                    response = delete_pdf(
-                        document
-                    )
-
-                if response is not None and response.ok:
-
                     st.success(
-                        "Deleted"
+                        "Deleted."
                     )
 
                     st.rerun()
 
                 elif response is not None:
 
-                    try:
-
-                        st.error(
-                            response.json().get(
-                                "detail",
-                                response.text
-                            )
-                        )
-
-                    except Exception:
-
-                        st.error(
-                            response.text
-                        )
+                    st.error(
+                        response.text
+                    )
 
     else:
 
         st.info(
-            "No PDFs uploaded yet."
+            "No PDFs indexed yet."
         )
+
+    # --------------------------------------------------------
+    # CHAT HISTORY
+    # --------------------------------------------------------
 
     st.divider()
 
-    # --------------------------------------------------------
-    # CLEAR CHAT
-    # --------------------------------------------------------
+    st.subheader(
+        "💬 Chat History"
+    )
+
+    if st.session_state.messages:
+
+        st.success(
+            f"{len(st.session_state.messages)} "
+            "messages stored"
+        )
+
+    else:
+
+        st.info(
+            "No chat messages yet."
+        )
 
     if st.button(
-        "🧹 Clear Chat",
+        "🧹 Clear Chat History",
         use_container_width=True
     ):
 
-        st.session_state.messages = []
+        clear_chat_history()
+
+        st.success(
+            "Chat history cleared."
+        )
 
         st.rerun()
 
 
 # ============================================================
-# MAIN PAGE HEADER
+# MAIN TITLE
 # ============================================================
 
-st.markdown(
-    '<div class="title">'
-    '🤖 Intelligent Document Q&A Assistant'
-    '</div>',
-    unsafe_allow_html=True,
+st.title(
+    "🤖 Intelligent Document Q&A Assistant"
 )
 
-st.markdown(
-    '<div class="subtitle">'
-    'Ask questions from your uploaded PDFs using '
-    'Retrieval-Augmented Generation.'
-    '</div>',
-    unsafe_allow_html=True,
+st.caption(
+    "Multi-document RAG with document filtering, "
+    "conversation history and multilingual voice."
 )
 
 
 # ============================================================
-# KNOWLEDGE BASE STATUS
+# DOCUMENT STATUS
 # ============================================================
+
+documents = get_documents()
 
 if documents:
 
     st.info(
-        f"📚 Knowledge base: "
-        f"**{len(documents)} document(s)**"
+        f"Knowledge base: **{len(documents)} document(s)**"
     )
 
 else:
 
     st.warning(
-        "Upload a PDF from the sidebar "
-        "to start asking questions."
+        "Upload at least one PDF from the sidebar."
     )
 
 
 # ============================================================
-# DISPLAY CHAT HISTORY
+# DOCUMENT SELECTION
 # ============================================================
 
-for index, message in enumerate(
-    st.session_state.messages
-):
+selected = st.selectbox(
+
+    "📚 Question Scope",
+
+    ["All Documents"] + documents
+)
+
+
+if selected == "All Documents":
+
+    selected_document = None
+
+else:
+
+    selected_document = selected
+
+
+# ============================================================
+# LANGUAGE
+# ============================================================
+
+language = st.selectbox(
+
+    "🔊 Answer language",
+
+    [
+        "English",
+        "Hindi",
+        "Marathi"
+    ]
+)
+
+
+language_code = {
+
+    "English": "english",
+
+    "Hindi": "hindi",
+
+    "Marathi": "marathi"
+
+}[language]
+
+
+# ============================================================
+# DISPLAY EXISTING CHAT HISTORY
+# ============================================================
+
+for message in st.session_state.messages:
 
     with st.chat_message(
         message["role"]
@@ -441,13 +651,8 @@ for index, message in enumerate(
             message["content"]
         )
 
-        # ----------------------------------------------------
-        # ASSISTANT MESSAGE
-        # ----------------------------------------------------
-
         if message["role"] == "assistant":
 
-            # Show sources
             show_sources(
                 message.get(
                     "sources",
@@ -455,150 +660,76 @@ for index, message in enumerate(
                 )
             )
 
-            # Show previously generated audio
-            audio_files = message.get(
-                "audio_files",
-                []
-            )
-
-            if audio_files:
-
-                st.markdown(
-                    "**🔊 Listen to Answer**"
-                )
-
-                for audio_file in audio_files:
-
-                    audio_path = (
-                        f"{API_URL}/tts/audio/"
-                        f"{audio_file}"
-                    )
-
-                    try:
-
-                        audio_response = requests.get(
-                            audio_path,
-                            timeout=30
-                        )
-
-                        if audio_response.ok:
-
-                            st.audio(
-                                audio_response.content,
-                                format="audio/mp3"
-                            )
-
-                    except requests.RequestException:
-
-                        st.warning(
-                            "Unable to load audio."
-                        )
-
-
-# ============================================================
-# EMPTY CHAT MESSAGE
-# ============================================================
-
-if not st.session_state.messages:
-
-    st.markdown(
-        "### 💬 Try asking"
-    )
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.info(
-        "**What is an Operating System?**"
-    )
-
-    c2.info(
-        "**What are the functions of an OS?**"
-    )
-
-    c3.info(
-        "**Explain process management.**"
-    )
-
-
-# ============================================================
-# VOICE LANGUAGE
-# ============================================================
-
-st.markdown(
-    "### 🌐 Voice Language"
-)
-
-selected_language = st.selectbox(
-    "Choose the language for audio:",
-    options=[
-        "English",
-        "Hindi",
-        "Marathi"
-    ],
-    index=0,
-)
-
-
-# Language codes used by gTTS/backend
-
-LANGUAGE_CODES = {
-    "English": "en",
-    "Hindi": "hi",
-    "Marathi": "mr",
-}
-
-
-language_code = LANGUAGE_CODES[
-    selected_language
-]
-
 
 # ============================================================
 # CHAT INPUT
 # ============================================================
 
 question = st.chat_input(
-    "Ask a question about your documents..."
+
+    "Ask a question about your uploaded PDF(s)..."
 )
 
 
 # ============================================================
-# QUESTION PROCESSING
+# PROCESS QUESTION
 # ============================================================
 
 if question:
 
-    # --------------------------------------------------------
-    # CHAT HISTORY FOR RAG
-    # --------------------------------------------------------
-
-    history = [
-        {
-            "role": message["role"],
-            "content": message["content"]
-        }
-
-        for message in st.session_state.messages
-    ]
-
+    question = question.strip()
 
     # --------------------------------------------------------
-    # SAVE USER MESSAGE
+    # VALIDATION
     # --------------------------------------------------------
+
+    if not question:
+
+        st.error(
+            "Question cannot be empty."
+        )
+
+        st.stop()
+
+
+    if not documents:
+
+        st.error(
+            "Please upload a PDF first."
+        )
+
+        st.stop()
+
+
+    # --------------------------------------------------------
+    # USER MESSAGE
+    # --------------------------------------------------------
+
+    user_message = {
+
+        "role": "user",
+
+        "content": question,
+
+        "sources": []
+    }
+
 
     st.session_state.messages.append(
-        {
-            "role": "user",
-            "content": question
-        }
+        user_message
     )
 
 
-    # --------------------------------------------------------
-    # DISPLAY USER MESSAGE
-    # --------------------------------------------------------
+    # SAVE IMMEDIATELY
 
-    with st.chat_message("user"):
+    save_chat_history(
+        st.session_state.messages
+    )
+
+
+    with st.chat_message(
+        "user"
+    ):
 
         st.markdown(
             question
@@ -606,307 +737,179 @@ if question:
 
 
     # --------------------------------------------------------
-    # INITIALIZE VARIABLES
+    # ASSISTANT
     # --------------------------------------------------------
 
-    answer = ""
+    with st.chat_message(
+        "assistant"
+    ):
 
-    sources = []
+        with st.spinner(
+            "Searching documents and generating answer..."
+        ):
 
-    audio_files = []
+            response = ask_question(
 
+                question,
 
-    # --------------------------------------------------------
-    # ASSISTANT RESPONSE
-    # --------------------------------------------------------
-
-    with st.chat_message("assistant"):
-
-        # ====================================================
-        # CHECK BACKEND
-        # ====================================================
-
-        if not backend_online():
-
-            answer = (
-                "⚠️ **Backend is not running.** "
-                "Start FastAPI first."
+                selected_document
             )
 
-            sources = []
+
+        if response is None:
+
+            st.stop()
+
+
+        try:
+
+            data = response.json()
+
+        except Exception:
+
+            data = {
+                "detail": response.text
+            }
+
+
+        if not response.ok:
 
             st.error(
-                answer
+                data.get(
+                    "detail",
+                    "Request failed."
+                )
             )
 
+            st.stop()
 
-        # ====================================================
-        # CHECK DOCUMENTS
-        # ====================================================
 
-        elif not documents:
+        # ----------------------------------------------------
+        # ANSWER
+        # ----------------------------------------------------
+
+        answer = data.get(
+            "answer",
+            ""
+        )
+
+
+        sources = data.get(
+            "sources",
+            []
+        )
+
+
+        if not answer:
 
             answer = (
-                "📂 **No documents are uploaded yet.** "
-                "Upload a PDF first."
-            )
-
-            sources = []
-
-            st.warning(
-                answer
+                "I couldn't find the answer "
+                "in the uploaded documents."
             )
 
 
-        # ====================================================
-        # ASK RAG QUESTION
-        # ====================================================
+        st.markdown(
+            answer
+        )
 
-        else:
 
-            with st.spinner(
-                "🔎 Searching documents "
-                "and generating answer..."
-            ):
+        # ----------------------------------------------------
+        # SOURCES
+        # ----------------------------------------------------
 
-                response = ask_question(
-                    question,
-                    history
+        show_sources(
+            sources
+        )
+
+
+        # ----------------------------------------------------
+        # AUDIO
+        # ----------------------------------------------------
+
+        audio_bytes = None
+
+
+        with st.spinner(
+            f"Generating {language} audio..."
+        ):
+
+            audio_response = generate_audio(
+
+                answer,
+
+                language_code
+            )
+
+
+        if (
+            audio_response is not None
+            and audio_response.ok
+        ):
+
+            try:
+
+                audio_data = (
+                    audio_response.json()
                 )
 
-
-            # =================================================
-            # SUCCESSFUL RAG RESPONSE
-            # =================================================
-
-            if response is not None and response.ok:
-
-                data = response.json()
-
-
-                # ---------------------------------------------
-                # GET ANSWER
-                # ---------------------------------------------
-
-                answer = data.get(
-                    "answer",
-                    "No answer returned."
-                )
-
-
-                # ---------------------------------------------
-                # GET SOURCES
-                # ---------------------------------------------
-
-                sources = data.get(
-                    "sources",
+                urls = audio_data.get(
+                    "audio_urls",
                     []
                 )
 
 
-                # ---------------------------------------------
-                # DISPLAY ANSWER
-                # ---------------------------------------------
+                if urls:
 
-                st.markdown(
-                    answer
-                )
+                    audio_file_response = requests.get(
 
+                        f"{API_URL}{urls[0]}",
 
-                # ---------------------------------------------
-                # DISPLAY SOURCES
-                # ---------------------------------------------
-
-                show_sources(
-                    sources
-                )
-
-
-                # =================================================
-                # TEXT TO SPEECH
-                # =================================================
-
-                st.markdown(
-                    "### 🔊 Listen to Answer"
-                )
-
-
-                with st.spinner(
-                    f"Generating "
-                    f"{selected_language} audio..."
-                ):
-
-                    audio_response = generate_audio(
-                        answer,
-                        language_code
+                        timeout=60
                     )
 
 
-                # =================================================
-                # TTS SUCCESS
-                # =================================================
+                    if audio_file_response.ok:
 
-                if (
-                    audio_response is not None
-                    and audio_response.ok
-                ):
-
-                    audio_data = (
-                        audio_response.json()
-                    )
-
-
-                    audio_files = (
-                        audio_data.get(
-                            "files",
-                            []
-                        )
-                    )
-
-
-                    if audio_files:
-
-                        st.success(
-                            f"🔊 "
-                            f"{selected_language} "
-                            f"audio generated!"
+                        audio_bytes = (
+                            audio_file_response.content
                         )
 
-
-                        # -----------------------------------------
-                        # PLAY AUDIO
-                        # -----------------------------------------
-
-                        for audio_file in audio_files:
-
-                            audio_url = (
-                                f"{API_URL}/tts/audio/"
-                                f"{audio_file}"
-                            )
-
-
-                            try:
-
-                                file_response = (
-                                    requests.get(
-                                        audio_url,
-                                        timeout=30
-                                    )
-                                )
-
-
-                                if file_response.ok:
-
-                                    st.audio(
-                                        file_response.content,
-                                        format="audio/mp3"
-                                    )
-
-
-                                else:
-
-                                    st.warning(
-                                        "Unable to load "
-                                        "generated audio."
-                                    )
-
-
-                            except requests.RequestException:
-
-                                st.warning(
-                                    "Unable to load "
-                                    "generated audio."
-                                )
-
-
-                    else:
-
-                        st.warning(
-                            "TTS service returned "
-                            "no audio files."
+                        st.audio(
+                            audio_bytes,
+                            format="audio/mp3"
                         )
 
+            except Exception:
 
-                # =================================================
-                # TTS ERROR
-                # =================================================
-
-                else:
-
-                    if audio_response is not None:
-
-                        try:
-
-                            detail = (
-                                audio_response.json().get(
-                                    "detail",
-                                    audio_response.text
-                                )
-                            )
-
-                        except Exception:
-
-                            detail = (
-                                audio_response.text
-                            )
-
-
-                        st.warning(
-                            f"Audio generation failed: "
-                            f"{detail}"
-                        )
-
-
-            # =================================================
-            # RAG BACKEND ERROR
-            # =================================================
-
-            else:
-
-                if response is None:
-
-                    detail = (
-                        "Unable to connect to backend."
-                    )
-
-                else:
-
-                    try:
-
-                        detail = (
-                            response.json().get(
-                                "detail",
-                                response.text
-                            )
-                        )
-
-                    except Exception:
-
-                        detail = response.text
-
-
-                answer = (
-                    f"⚠️ **Backend Error**\n\n"
-                    f"{detail}"
-                )
-
-                sources = []
-
-                st.error(
-                    detail
+                st.warning(
+                    "Audio was generated but "
+                    "could not be loaded."
                 )
 
 
-    # ========================================================
-    # SAVE ASSISTANT RESPONSE
-    # ========================================================
+        # ----------------------------------------------------
+        # SAVE ASSISTANT MESSAGE
+        # ----------------------------------------------------
 
-    st.session_state.messages.append(
-        {
+        assistant_message = {
+
             "role": "assistant",
+
             "content": answer,
-            "sources": sources,
-            "audio_files": audio_files,
-            "language": selected_language,
+
+            "sources": sources
         }
-    )
+
+
+        st.session_state.messages.append(
+            assistant_message
+        )
+
+
+        # ----------------------------------------------------
+        # SAVE PERMANENTLY
+        # ----------------------------------------------------
+
+        save_chat_history(
+            st.session_state.messages
+        )

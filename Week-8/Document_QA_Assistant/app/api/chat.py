@@ -10,92 +10,149 @@ router = APIRouter(
     tags=["Chat"]
 )
 
+
 rag = RAGService()
 tts_service = TTSService()
 
 
-# --------------------------------------------------
-# Existing Chat / RAG endpoint
-# --------------------------------------------------
+# ==================================================
+# NORMAL CHAT
+# ==================================================
 
 @router.post("/")
 def ask_question(request: ChatRequest):
+
     try:
+
+        question = request.question.strip()
+
+        if not question:
+
+            raise ValueError(
+                "Question cannot be empty."
+            )
+
         history = [
             message.model_dump()
             for message in request.history
         ]
 
-        return rag.ask(
-            request.question,
-            history=history
+        result = rag.ask(
+            question=question,
+            history=history,
+            document=request.document
         )
 
+        return result
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc)
+        ) from exc
+
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail=f"RAG request failed: {exc}"
         ) from exc
 
 
-# --------------------------------------------------
-# Chat + Text-to-Speech endpoint
-# --------------------------------------------------
+# ==================================================
+# CHAT + VOICE
+# ==================================================
 
 @router.post("/with-audio")
 def ask_question_with_audio(
     request: ChatRequest,
     language: str = "english"
 ):
+
     try:
 
-        # 1. Get answer from RAG
+        question = request.question.strip()
+
+        if not question:
+
+            raise ValueError(
+                "Question cannot be empty."
+            )
+
         history = [
             message.model_dump()
             for message in request.history
         ]
 
+        # -----------------------------
+        # RAG
+        # -----------------------------
+
         rag_result = rag.ask(
-            request.question,
-            history=history
+            question=question,
+            history=history,
+            document=request.document
         )
 
-        # 2. Extract answer text
-        if isinstance(rag_result, dict):
-
-            answer = (
-                rag_result.get("answer")
-                or rag_result.get("response")
-                or rag_result.get("result")
-                or rag_result.get("message")
-            )
-
-        else:
-            answer = str(rag_result)
+        answer = rag_result.get(
+            "answer",
+            ""
+        )
 
         if not answer:
+
             raise ValueError(
                 "RAG returned an empty answer."
             )
 
-        # 3. Generate audio
-        audio_result = tts_service.generate_audio(
-            text=answer,
-            language=language,
-            filename="chat_answer"
+        # -----------------------------
+        # TTS
+        # -----------------------------
+
+        audio_result = (
+            tts_service.generate_audio(
+                text=answer,
+                language=language,
+                filename="chat_answer"
+            )
         )
 
-        # 4. Return answer + audio
+        # -----------------------------
+        # RESPONSE
+        # -----------------------------
+
         return {
+
             "success": True,
-            "question": request.question,
+
+            "question": question,
+
+            "document": request.document or "ALL",
+
             "answer": answer,
-            "language": audio_result["language"],
-            "language_name": audio_result["language_name"],
-            "audio_files": audio_result["files"],
+
+            "sources": rag_result.get(
+                "sources",
+                []
+            ),
+
+            "language": (
+                audio_result["language"]
+            ),
+
+            "language_name": (
+                audio_result["language_name"]
+            ),
+
+            "audio_files": (
+                audio_result["files"]
+            ),
+
             "audio_urls": [
                 f"/tts/audio/{filename}"
-                for filename in audio_result["files"]
+                for filename
+                in audio_result["files"]
             ]
         }
 
